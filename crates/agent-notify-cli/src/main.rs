@@ -1,0 +1,89 @@
+use agent_notify_core::{AgentEventInput, AgentState};
+use anyhow::{Context, bail};
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Parser)]
+struct Args {
+    #[arg(long, env = "AGENT_NOTIFY_SERVER")]
+    server: String,
+    #[arg(long, env = "AGENT_NOTIFY_TOKEN")]
+    token: String,
+    #[arg(long, env = "AGENT_NOTIFY_AGENT", default_value = "codex")]
+    agent: String,
+    #[arg(long, env = "AGENT_NOTIFY_HOST")]
+    host: Option<String>,
+    #[arg(long, env = "AGENT_NOTIFY_REPO")]
+    repo: Option<String>,
+    #[arg(long, value_enum)]
+    state: StateArg,
+    #[arg(long)]
+    summary: Option<String>,
+    #[arg(long)]
+    priority: Option<u8>,
+    #[arg(long)]
+    ttl_seconds: Option<u64>,
+    #[arg(long)]
+    run_id: Option<String>,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum StateArg {
+    Running,
+    WaitingInput,
+    Done,
+    Failed,
+}
+
+impl From<StateArg> for AgentState {
+    fn from(value: StateArg) -> Self {
+        match value {
+            StateArg::Running => AgentState::Running,
+            StateArg::WaitingInput => AgentState::WaitingInput,
+            StateArg::Done => AgentState::Done,
+            StateArg::Failed => AgentState::Failed,
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let host = match args.host {
+        Some(host) => host,
+        None => local_hostname()?,
+    };
+
+    let input = AgentEventInput {
+        agent: args.agent,
+        host,
+        repo: args.repo,
+        state: args.state.into(),
+        summary: args.summary,
+        priority: args.priority,
+        ttl_seconds: args.ttl_seconds,
+        run_id: args.run_id,
+    };
+
+    let url = format!("{}/v1/events", args.server.trim_end_matches('/'));
+    let response = reqwest::Client::new()
+        .post(url)
+        .bearer_auth(args.token)
+        .json(&input)
+        .send()
+        .await
+        .context("failed to post event")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        bail!("server returned {status}: {body}");
+    }
+
+    Ok(())
+}
+
+fn local_hostname() -> anyhow::Result<String> {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .context("host was not supplied and no hostname environment variable was found")
+}
