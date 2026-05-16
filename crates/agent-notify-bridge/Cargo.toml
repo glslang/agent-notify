@@ -1,0 +1,25 @@
+[package]
+name = "agent-notify-bridge"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+agent-notify-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+directories.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6.5", default-features = false, features = ["windows-native"] }
+tao = "0.34.5"
+tray-icon = "0.21.2"
