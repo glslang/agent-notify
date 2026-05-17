@@ -310,11 +310,48 @@ fn websocket_url(server_url: &str, token: &str) -> anyhow::Result<String> {
     } else if let Some(rest) = base.strip_prefix("http://") {
         base = format!("ws://{rest}");
     }
-    Ok(format!("{base}/v1/bridge/ws?token={token}"))
+    Ok(format!(
+        "{base}/v1/bridge/ws?token={}",
+        encode_query_component(token)
+    ))
+}
+
+fn encode_query_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 fn local_hostname() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn websocket_url_converts_http_to_ws() {
+        let url = websocket_url("http://127.0.0.1:8787/", "change-me").unwrap();
+
+        assert_eq!(url, "ws://127.0.0.1:8787/v1/bridge/ws?token=change-me");
+    }
+
+    #[test]
+    fn websocket_url_encodes_token_query_value() {
+        let url = websocket_url("https://agent.example", "a token&with=query").unwrap();
+
+        assert_eq!(
+            url,
+            "wss://agent.example/v1/bridge/ws?token=a%20token%26with%3Dquery"
+        );
+    }
 }
