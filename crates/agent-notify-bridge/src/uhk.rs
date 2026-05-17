@@ -49,7 +49,7 @@ mod platform {
         let api = HidApi::new().context("failed to initialize HID API")?;
         let device_info = api
             .device_list()
-            .find(is_uhk80_communication_interface)
+            .find(|device| is_uhk80_communication_interface(device))
             .context("UHK80 communication interface not found")?;
         let device = device_info
             .open_device(&api)

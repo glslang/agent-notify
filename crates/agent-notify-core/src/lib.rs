@@ -206,8 +206,7 @@ pub fn concise_display_text(event: &AgentEvent) -> String {
 fn quoted_macro_command(prefix: &str, value: &str) -> Result<String, EventError> {
     let overhead = prefix.len() + 3;
     let max_value_len = UHK_MAX_MACRO_COMMAND_BYTES.saturating_sub(overhead);
-    let truncated = truncate_bytes(value, max_value_len);
-    let escaped = escape_macro_string(&truncated);
+    let escaped = escape_and_truncate_macro_string(value, max_value_len);
     let command = format!("{prefix} \"{escaped}\"");
 
     if command.len() > UHK_MAX_MACRO_COMMAND_BYTES {
@@ -241,11 +240,7 @@ fn validate_optional_len(
 }
 
 fn normalize_field(value: &str) -> String {
-    value
-        .trim()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn short_token(value: &str, max_chars: usize) -> String {
@@ -270,15 +265,6 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
         + "~"
 }
 
-fn truncate_bytes(value: &str, max_bytes: usize) -> String {
-    value.chars().fold(String::new(), |mut acc, ch| {
-        if acc.len() + ch.len_utf8() <= max_bytes {
-            acc.push(ch);
-        }
-        acc
-    })
-}
-
 fn sanitize_macro_string(value: &str) -> String {
     value
         .chars()
@@ -292,8 +278,28 @@ fn sanitize_macro_string(value: &str) -> String {
         .collect()
 }
 
-fn escape_macro_string(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
+fn escape_and_truncate_macro_string(value: &str, max_bytes: usize) -> String {
+    let mut escaped_value = String::new();
+    for ch in value.chars() {
+        let escaped = match ch {
+            '\\' => "\\\\",
+            '"' => "\\\"",
+            _ => {
+                if escaped_value.len() + ch.len_utf8() <= max_bytes {
+                    escaped_value.push(ch);
+                    continue;
+                }
+                break;
+            }
+        };
+
+        if escaped_value.len() + escaped.len() <= max_bytes {
+            escaped_value.push_str(escaped);
+        } else {
+            break;
+        }
+    }
+    escaped_value
 }
 
 fn unix_ms() -> u64 {
@@ -340,6 +346,27 @@ mod tests {
     fn macro_command_fits_uhk_payload() {
         let event = event(AgentState::WaitingInput, None);
         let command = macro_command_for_event(&event).unwrap();
+        assert!(command.len() <= UHK_MAX_MACRO_COMMAND_BYTES);
+    }
+
+    #[test]
+    fn macro_command_accounts_for_escaped_bytes() {
+        let event = AgentEventInput {
+            agent: "\"\"\"\"\"\"\"\"".into(),
+            host: "\"\"\"\"\"\"\"\"\"\"".into(),
+            repo: Some("\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"".into()),
+            state: AgentState::WaitingInput,
+            summary: None,
+            priority: None,
+            ttl_seconds: Some(60),
+            run_id: None,
+        }
+        .into_event()
+        .unwrap();
+
+        let command = macro_command_for_event(&event).unwrap();
+
+        assert!(command.contains("\\\""));
         assert!(command.len() <= UHK_MAX_MACRO_COMMAND_BYTES);
     }
 
