@@ -17,11 +17,11 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test \"dist/test/*.test.js\"",
+    "test": "npm run build && node --test dist/test/client.test.js dist/test/hostname.test.js dist/test/index.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
