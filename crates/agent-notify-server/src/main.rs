@@ -97,7 +97,7 @@ async fn post_event(
         })
         .ok();
 
-    Ok(Json(event))
+    Ok(Json(latest))
 }
 
 async fn get_latest(
@@ -254,6 +254,7 @@ fn require_auth(headers: &HeaderMap, token: &str) -> Result<(), AppError> {
     }
 }
 
+#[derive(Debug)]
 enum AppError {
     BadRequest(agent_notify_core::EventError),
     Unauthorized,
@@ -273,5 +274,64 @@ impl IntoResponse for AppError {
             )
                 .into_response(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent_notify_core::AgentState;
+    use axum::http::{HeaderValue, header::AUTHORIZATION};
+
+    fn state() -> AppState {
+        let (tx, _) = broadcast::channel(16);
+        AppState {
+            token: Arc::new("secret".to_string()),
+            latest: Arc::new(Mutex::new(None)),
+            tx,
+        }
+    }
+
+    fn auth_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
+        headers
+    }
+
+    fn input(state: AgentState, host: &str, priority: Option<u8>) -> AgentEventInput {
+        AgentEventInput {
+            agent: "codex".to_string(),
+            host: host.to_string(),
+            repo: Some("agent-notify".to_string()),
+            state,
+            summary: None,
+            priority,
+            ttl_seconds: Some(60),
+            run_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn post_event_returns_chosen_latest_event() {
+        let state = state();
+        let Json(high) = post_event(
+            State(state.clone()),
+            auth_headers(),
+            Json(input(AgentState::WaitingInput, "workstation", Some(90))),
+        )
+        .await
+        .unwrap();
+
+        let Json(response) = post_event(
+            State(state),
+            auth_headers(),
+            Json(input(AgentState::Running, "other-host", Some(20))),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.id, high.id);
+        assert_eq!(response.host, high.host);
+        assert_eq!(response.state, AgentState::WaitingInput);
     }
 }

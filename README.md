@@ -119,6 +119,16 @@ Claude Code hook commands:
 
 Set `AGENT_NOTIFY_SERVER` and `AGENT_NOTIFY_TOKEN` in the hook environment, or pass `--server` and `--token`.
 
+## Semantics and limits
+
+The server stores one in-memory latest notification. New events replace earlier events from the same work item, where a matching `run_id` wins first and otherwise `agent`, `host`, and `repo` are compared. Different live events are ranked by priority and receive time; default priorities are `waiting-input` 90, `failed` 80, `done` 50, and `running` 20.
+
+Events expire after their TTL. The default TTL is 120 seconds, and the server clamps requested TTL values to 1 through 3600 seconds.
+
+When the Windows bridge is paused, the server still accepts events and updates `GET /v1/events/latest`, but the bridge suppresses WebSocket deliveries while paused. The keyboard can therefore intentionally keep showing its previous state until the bridge is unpaused, reconnected, or explicitly dismissed.
+
+The current server keeps state in memory and broadcasts from a single process. It is intended for a small single-server setup, not multi-instance high availability or audit logging.
+
 ## Run the bridge
 
 On Windows, create `%APPDATA%\agent-notify\bridge.toml`. The bridge does not create this file automatically.
