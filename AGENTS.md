@@ -36,3 +36,5 @@ The current history uses short, imperative summaries such as `Implement Rust age
 ## Security & Configuration Tips
 
 Do not commit real `AGENT_NOTIFY_TOKEN` values or local bridge configuration. For Windows bridge development, keep `%APPDATA%\agent-notify\bridge.toml` local and use `mock_display = true` or `--mock-display` when UHK80 hardware is unavailable.
+
+For Codecov uploads from Dependabot pull requests, add the same `CODECOV_TOKEN` under **Settings → Secrets and variables → Dependabot** (Actions secrets are not exposed to `dependabot[bot]`).
