@@ -30,7 +30,7 @@ cargo run -p agent-notify-cli -- \
 
 ## Run the bridge
 
-On Windows, create `%APPDATA%\agent-notify\bridge.toml`:
+On Windows, create `%APPDATA%\agent-notify\bridge.toml`. The bridge does not create this file automatically.
 
 ```toml
 server_url = "http://linux-server:8787"

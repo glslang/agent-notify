@@ -1,7 +1,10 @@
 use anyhow::{Context, bail};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BridgeConfig {
@@ -17,8 +20,7 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<BridgeConfig> {
         return read_config(path);
     }
 
-    if let Some(project_dirs) = ProjectDirs::from("", "", "agent-notify") {
-        let path = project_dirs.config_dir().join("bridge.toml");
+    for path in config_search_paths() {
         if path.exists() {
             return read_config(&path);
         }
@@ -26,8 +28,16 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<BridgeConfig> {
 
     let server_url = std::env::var("AGENT_NOTIFY_SERVER")
         .unwrap_or_else(|_| "http://127.0.0.1:8787".to_string());
-    let token = std::env::var("AGENT_NOTIFY_TOKEN")
-        .context("set AGENT_NOTIFY_TOKEN or create bridge.toml with token")?;
+    let token = std::env::var("AGENT_NOTIFY_TOKEN").with_context(|| {
+        format!(
+            "set AGENT_NOTIFY_TOKEN or create bridge.toml at one of: {}",
+            config_search_paths()
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
 
     Ok(BridgeConfig {
         server_url,
@@ -35,6 +45,25 @@ pub fn load_config(path: Option<&Path>) -> anyhow::Result<BridgeConfig> {
         hostname: std::env::var("AGENT_NOTIFY_HOST").ok(),
         mock_display: false,
     })
+}
+
+fn config_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    #[cfg(windows)]
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        paths.push(
+            PathBuf::from(appdata)
+                .join("agent-notify")
+                .join("bridge.toml"),
+        );
+    }
+
+    if let Some(project_dirs) = ProjectDirs::from("", "", "agent-notify") {
+        paths.push(project_dirs.config_dir().join("bridge.toml"));
+    }
+
+    paths
 }
 
 fn read_config(path: &Path) -> anyhow::Result<BridgeConfig> {
