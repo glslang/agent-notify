@@ -1,6 +1,7 @@
 # agent-notify
 
 [![CI](https://github.com/glslang/agent-notify/actions/workflows/ci.yml/badge.svg)](https://github.com/glslang/agent-notify/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/glslang/agent-notify/graph/badge.svg)](https://codecov.io/gh/glslang/agent-notify)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/glslang/agent-notify/blob/main/LICENSE)
 
 Rust workspace plus TypeScript CLI for pushing **coding-agent** status to a tiny HTTP/WebSocket server, then showing it on a **UHK80** OLED via a Windows system-tray bridge (HID locally—no GTK on the tray path).

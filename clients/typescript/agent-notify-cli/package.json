@@ -22,10 +22,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/client.test.js dist/test/hostname.test.js dist/test/index.test.js",
+    "test:coverage": "npm run build && c8 --reporter=lcov --reports-dir=coverage --include='dist/src/**' node --test dist/test/client.test.js dist/test/hostname.test.js dist/test/index.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "c8": "^10.1.3",
     "typescript": "^5.7.2"
   }
 }
