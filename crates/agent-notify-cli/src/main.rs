@@ -1,4 +1,4 @@
-use agent_notify_core::{AgentEventInput, AgentState};
+use agent_notify_core::{AgentEventInput, AgentState, local_hostname as detect_local_hostname};
 use anyhow::{Context, bail};
 use clap::{Parser, ValueEnum};
 
@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn local_hostname() -> anyhow::Result<String> {
-    std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .context("host was not supplied and no hostname environment variable was found")
+    detect_local_hostname().context(
+        "host was not supplied and hostname could not be inferred from environment or system",
+    )
 }
