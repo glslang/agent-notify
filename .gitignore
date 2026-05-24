@@ -16,6 +16,7 @@ target
 # Node/npm clients
 **/node_modules/
 **/dist/
+**/coverage/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

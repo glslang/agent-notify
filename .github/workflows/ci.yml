@@ -49,6 +49,46 @@ jobs:
           tool: nextest
       - run: cargo nextest run --workspace --locked
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-${{ runner.os }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,cargo-llvm-cov
+      - name: Rust coverage
+        run: cargo llvm-cov nextest --workspace --locked --lcov --output-path rust-lcov.info
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: clients/typescript/agent-notify-cli/package-lock.json
+      - name: TypeScript coverage
+        working-directory: clients/typescript/agent-notify-cli
+        run: |
+          npm ci
+          npm run test:coverage
+      - uses: codecov/codecov-action@v5
+        with:
+          files: rust-lcov.info
+          flags: rust
+          fail_ci_if_error: false
+      - uses: codecov/codecov-action@v5
+        with:
+          files: clients/typescript/agent-notify-cli/coverage/lcov.info
+          flags: typescript
+          fail_ci_if_error: false
+
   typescript:
     name: TypeScript
     runs-on: ubuntu-latest
