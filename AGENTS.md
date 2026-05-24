@@ -7,7 +7,7 @@ This is a Rust workspace with member crates under `crates/`.
 - `crates/agent-notify-core`: shared event types and domain errors.
 - `crates/agent-notify-server`: HTTP/WebSocket event collector.
 - `crates/agent-notify-cli`: command-line sender for hooks and local testing.
-- `crates/agent-notify-bridge`: Windows tray bridge that connects to the server and updates the UHK80 display.
+- `crates/agent-notify-bridge`: Windows tray bridge that connects to the server and updates the UHK80 display. Tray uses Win32 + winit (`tray-icon` has no GTK on this path); if Unix UI ever requires GTK, use **GTK4/gtk4-rs**, not GTK3—`tray-icon`/`muda` upstream still targets GTK 3-only for Linux helpers.
 
 Keep cross-crate protocol types in `agent-notify-core`. Put binary-specific parsing, transport, and platform code in the relevant application crate. Tests should live beside the module they exercise or in a crate-level `tests/` directory when integration scope is needed.
 

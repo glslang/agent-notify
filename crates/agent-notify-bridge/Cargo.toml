@@ -20,6 +20,14 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# Windows tray menus use tray-icon Win32 backends; no GTK dependency.
+#
+# tray-icon/muda optionally enable GTK *3* (crate `gtk` 0.x) on BSD/Linux; that pulls older
+# `glib` and has tripped GHSA-wrw7-89jp-8q8g in the unified lockfile, so defaults stay off.
+#
+# If the bridge ever grows a GTK-based UI on Unix, wire **gtk4-rs** (`gtk4`/`libadwaita`, etc.);
+# there is still no GTK4 backend in crates.io tray-icon/muda as of tray-icon 0.24—track upstream or
+# keep non-GTK event loops until one lands.
 hidapi = { version = "2.6.5", default-features = false, features = ["windows-native"] }
 tray-icon = { version = "0.24", default-features = false, features = ["common-controls-v6"] }
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
