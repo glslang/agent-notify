@@ -14,7 +14,7 @@ Keep cross-crate protocol types in `agent-notify-core`. Put binary-specific pars
 ## Build, Test, and Development Commands
 
 - `cargo check --workspace`: quickly validate the full workspace.
-- `cargo test --workspace`: run all tests.
+- `cargo nextest run --workspace` (or `cargo test --workspace`): run all tests locally; CI uses [nextest](https://nexte.st/).
 - `cargo fmt --all`: format every crate with `rustfmt`.
 - `cargo clippy --workspace --all-targets`: run lints across binaries, libraries, and tests.
 - `AGENT_NOTIFY_TOKEN=change-me cargo run -p agent-notify-server -- --bind 0.0.0.0:8787`: run the server.
@@ -27,7 +27,7 @@ Use Rust 2024 edition conventions and standard `rustfmt` output. Prefer clear mo
 
 ## Testing Guidelines
 
-There are no explicit coverage gates yet. Add focused unit tests for parsing, serialization, and state transitions in the crate being changed. Add integration tests when behavior crosses crate boundaries, such as CLI-to-server event compatibility. Run `cargo test --workspace` before opening a PR.
+There are no explicit coverage gates yet. Add focused unit tests for parsing, serialization, and state transitions in the crate being changed. Add integration tests when behavior crosses crate boundaries, such as CLI-to-server event compatibility. Run `cargo nextest run --workspace` (or `cargo test --workspace`) before opening a PR.
 
 ## Commit & Pull Request Guidelines
 
