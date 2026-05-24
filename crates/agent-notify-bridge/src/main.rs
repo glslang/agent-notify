@@ -2,7 +2,7 @@ mod settings;
 mod uhk;
 
 use agent_notify_core::{
-    BridgeClientMessage, BridgeServerMessage, BridgeStatus,
+    BridgeClientMessage, BridgeServerMessage, BridgeStatus, clear_macro_command,
     local_hostname as detect_local_hostname, macro_command_for_event,
 };
 use anyhow::Context;
@@ -40,6 +40,7 @@ struct Args {
 #[cfg_attr(not(windows), allow(dead_code))]
 enum BridgeCommand {
     Test,
+    Dismiss,
     SetPaused(bool),
     Reconnect,
     Quit,
@@ -101,10 +102,12 @@ fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
     let menu = Menu::new();
     let pause_item = CheckMenuItem::new("Pause notifications", true, false, None);
     let test_item = MenuItem::new("Send test notification", true, None);
+    let dismiss_item = MenuItem::new("Dismiss notification", true, None);
     let reconnect_item = MenuItem::new("Reconnect", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
     menu.append(&pause_item)?;
     menu.append(&test_item)?;
+    menu.append(&dismiss_item)?;
     menu.append(&reconnect_item)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&quit_item)?;
@@ -144,6 +147,8 @@ fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
                 *control_flow = ControlFlow::Exit;
             } else if event.id == test_item.id() {
                 let _ = command_tx.send(BridgeCommand::Test);
+            } else if event.id == dismiss_item.id() {
+                let _ = command_tx.send(BridgeCommand::Dismiss);
             } else if event.id == reconnect_item.id() {
                 let _ = command_tx.send(BridgeCommand::Reconnect);
             } else if event.id == pause_item.id() {
@@ -245,6 +250,14 @@ async fn bridge_session(
                         last_display = Some(command.to_string());
                         send_status(&mut ws, config, &display, state, last_display.clone()).await?;
                     }
+                    Some(BridgeCommand::Dismiss) => {
+                        ws.send(Message::Text(
+                            serde_json::to_string(&BridgeClientMessage::DismissLatest)?.into(),
+                        ))
+                        .await?;
+                        clear_display(&display, &mut last_display, "tray");
+                        send_status(&mut ws, config, &display, state, last_display.clone()).await?;
+                    }
                     None => return Ok(BridgeExit::Quit),
                 }
             }
@@ -269,6 +282,7 @@ async fn bridge_session(
                             }
                             BridgeServerMessage::Clear { reason } => {
                                 info!(%reason, "clear requested");
+                                clear_display(&display, &mut last_display, &reason);
                             }
                         }
                     }
@@ -279,6 +293,16 @@ async fn bridge_session(
             }
         }
     }
+}
+
+fn clear_display(display: &DisplayAdapter, last_display: &mut Option<String>, reason: &str) {
+    let command = clear_macro_command();
+    if let Err(err) = display.display_macro_command(command) {
+        warn!(?err, %command, %reason, "failed to clear UHK display");
+        return;
+    }
+
+    *last_display = None;
 }
 
 async fn send_status(

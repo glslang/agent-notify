@@ -82,6 +82,7 @@ pub struct BridgeStatus {
 pub enum BridgeClientMessage {
     Status { status: BridgeStatus },
     RequestLatest,
+    DismissLatest,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -94,6 +95,11 @@ pub enum BridgeServerMessage {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HealthResponse {
     pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DismissResponse {
+    pub dismissed: bool,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -173,6 +179,10 @@ pub fn macro_command_for_event(event: &AgentEvent) -> Result<String, EventError>
             quoted_macro_command("notify", &base)
         }
     }
+}
+
+pub fn clear_macro_command() -> &'static str {
+    "setLedTxt 1 notification \"\""
 }
 
 pub fn uhk_exec_macro_report(report_id: u8, command: &str) -> Result<Vec<u8>, EventError> {
@@ -382,6 +392,11 @@ mod tests {
         let event = event(AgentState::WaitingInput, None);
         let command = macro_command_for_event(&event).unwrap();
         assert!(command.len() <= UHK_MAX_MACRO_COMMAND_BYTES);
+    }
+
+    #[test]
+    fn clear_macro_command_fits_uhk_payload() {
+        assert!(clear_macro_command().len() <= UHK_MAX_MACRO_COMMAND_BYTES);
     }
 
     #[test]

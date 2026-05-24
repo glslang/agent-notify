@@ -1,6 +1,6 @@
 use agent_notify_core::{
-    AgentEvent, AgentEventInput, BridgeClientMessage, BridgeServerMessage, HealthResponse,
-    choose_latest,
+    AgentEvent, AgentEventInput, BridgeClientMessage, BridgeServerMessage, DismissResponse,
+    HealthResponse, choose_latest,
 };
 use anyhow::Context;
 use axum::{
@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/events", post(post_event))
-        .route("/v1/events/latest", get(get_latest))
+        .route("/v1/events/latest", get(get_latest).delete(delete_latest))
         .route("/v1/bridge/ws", get(bridge_ws))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -109,6 +109,15 @@ async fn get_latest(
     Ok(Json(latest))
 }
 
+async fn delete_latest(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<DismissResponse>, AppError> {
+    require_auth(&headers, &state.token)?;
+    let dismissed = dismiss_latest(&state, "api").await;
+    Ok(Json(DismissResponse { dismissed }))
+}
+
 async fn bridge_ws(
     State(state): State<AppState>,
     Query(auth): Query<WsAuth>,
@@ -154,6 +163,9 @@ async fn handle_bridge_socket(state: AppState, socket: WebSocket) {
                                 if let Some(event) = live_latest(&state).await {
                                     send_server_message(&mut sender, &BridgeServerMessage::Event { event }).await;
                                 }
+                            }
+                            Ok(BridgeClientMessage::DismissLatest) => {
+                                dismiss_latest(&state, "bridge").await;
                             }
                             Err(err) => warn!(?err, "invalid bridge message"),
                         }
@@ -210,6 +222,22 @@ async fn live_latest(state: &AppState) -> Option<AgentEvent> {
         *guard = None;
         None
     }
+}
+
+async fn dismiss_latest(state: &AppState, reason: &str) -> bool {
+    let dismissed = {
+        let mut guard = state.latest.lock().await;
+        guard.take().is_some()
+    };
+
+    state
+        .tx
+        .send(BridgeServerMessage::Clear {
+            reason: reason.to_string(),
+        })
+        .ok();
+
+    dismissed
 }
 
 fn require_auth(headers: &HeaderMap, token: &str) -> Result<(), AppError> {
