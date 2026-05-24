@@ -260,11 +260,11 @@ async fn bridge_session(
                                 if state.paused.load(Ordering::Relaxed) {
                                     continue;
                                 }
-                                if !display.keyboard_present() {
+                                let command = macro_command_for_event(&event)?;
+                                if let Err(err) = display.display_macro_command(&command) {
+                                    warn!(?err, %command, "failed to update UHK display");
                                     continue;
                                 }
-                                let command = macro_command_for_event(&event)?;
-                                display.display_macro_command(&command)?;
                                 last_display = Some(command);
                             }
                             BridgeServerMessage::Clear { reason } => {
