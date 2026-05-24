@@ -80,7 +80,14 @@ jobs:
         run: |
           npm ci
           npm run test:coverage
+      - name: Skip Codecov upload
+        if: github.event_name == 'pull_request' && (github.actor == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository)
+        run: |
+          echo "::notice::Skipping Codecov upload on this pull_request."
+          echo "Dependabot PRs need CODECOV_TOKEN under Settings → Secrets and variables → Dependabot."
+          echo "Fork PRs cannot access repository secrets; uploads run on push to main and same-repo PRs."
       - uses: codecov/codecov-action@v6
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: rust-lcov.info
@@ -88,6 +95,7 @@ jobs:
           verbose: true
           fail_ci_if_error: true
       - uses: codecov/codecov-action@v6
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: clients/typescript/agent-notify-cli/coverage/lcov.info
