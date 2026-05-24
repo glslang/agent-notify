@@ -21,5 +21,5 @@ tracing-subscriber.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 hidapi = { version = "2.6.5", default-features = false, features = ["windows-native"] }
-tao = "0.34.5"
-tray-icon = "0.21.2"
+tray-icon = { version = "0.24", default-features = false, features = ["common-controls-v6"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }

@@ -51,6 +51,66 @@ struct BridgeRuntimeState {
     paused: Arc<AtomicBool>,
 }
 
+#[cfg(windows)]
+#[derive(Debug)]
+enum TrayUserEvent {
+    Menu(tray_icon::menu::MenuEvent),
+}
+
+#[cfg(windows)]
+struct TrayMenuLoop {
+    command_tx: mpsc::UnboundedSender<BridgeCommand>,
+    paused: Arc<AtomicBool>,
+    pause_item: std::rc::Rc<tray_icon::menu::CheckMenuItem>,
+    quit_id: tray_icon::menu::MenuId,
+    test_id: tray_icon::menu::MenuId,
+    dismiss_id: tray_icon::menu::MenuId,
+    reconnect_id: tray_icon::menu::MenuId,
+    pause_id: tray_icon::menu::MenuId,
+}
+
+#[cfg(windows)]
+impl winit::application::ApplicationHandler<TrayUserEvent> for TrayMenuLoop {
+    fn resumed(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {}
+
+    fn window_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        _event: winit::event::WindowEvent,
+    ) {
+    }
+
+    fn user_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: TrayUserEvent,
+    ) {
+        let TrayUserEvent::Menu(menu_event) = event;
+        let id = menu_event.id().clone();
+        if id == self.quit_id {
+            let _ = self.command_tx.send(BridgeCommand::Quit);
+            event_loop.exit();
+            return;
+        }
+        if id == self.test_id {
+            let _ = self.command_tx.send(BridgeCommand::Test);
+        } else if id == self.dismiss_id {
+            let _ = self.command_tx.send(BridgeCommand::Dismiss);
+        } else if id == self.reconnect_id {
+            let _ = self.command_tx.send(BridgeCommand::Reconnect);
+        } else if id == self.pause_id {
+            let paused = self.pause_item.is_checked();
+            self.paused.store(paused, Ordering::Relaxed);
+            let _ = self.command_tx.send(BridgeCommand::SetPaused(paused));
+        }
+    }
+
+    fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        let _ = self.command_tx.send(BridgeCommand::Quit);
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
@@ -91,14 +151,21 @@ fn run_console(config: BridgeConfig) -> anyhow::Result<()> {
 
 #[cfg(windows)]
 fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
-    use tao::event::Event;
-    use tao::event_loop::{ControlFlow, EventLoopBuilder};
+    use anyhow::Context;
     use tray_icon::{
         Icon, TrayIconBuilder,
-        menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+        menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     };
 
-    let event_loop = EventLoopBuilder::new().build();
+    let mut event_loop = winit::event_loop::EventLoop::<TrayUserEvent>::with_user_event()
+        .build()
+        .context("failed to create winit event loop")?;
+
+    let event_proxy = event_loop.create_proxy();
+    tray_icon::menu::MenuEvent::set_event_handler(Some(move |event| {
+        let _ = event_proxy.send_event(TrayUserEvent::Menu(event));
+    }));
+
     let menu = Menu::new();
     let pause_item = CheckMenuItem::new("Pause notifications", true, false, None);
     let test_item = MenuItem::new("Send test notification", true, None);
@@ -119,6 +186,13 @@ fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
         .with_icon(icon)
         .build()?;
 
+    let pause_item = std::rc::Rc::new(pause_item);
+    let pause_id = pause_item.id().clone();
+    let quit_id = quit_item.id().clone();
+    let test_id = test_item.id().clone();
+    let dismiss_id = dismiss_item.id().clone();
+    let reconnect_id = reconnect_item.id().clone();
+
     let (command_tx, command_rx) = mpsc::unbounded_channel();
     let state = BridgeRuntimeState {
         paused: Arc::new(AtomicBool::new(false)),
@@ -137,31 +211,22 @@ fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
         }
     });
 
-    let menu_rx = MenuEvent::receiver();
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+    let mut tray_loop = TrayMenuLoop {
+        command_tx,
+        paused: state.paused,
+        pause_item,
+        quit_id,
+        test_id,
+        dismiss_id,
+        reconnect_id,
+        pause_id,
+    };
 
-        while let Ok(event) = menu_rx.try_recv() {
-            if event.id == quit_item.id() {
-                let _ = command_tx.send(BridgeCommand::Quit);
-                *control_flow = ControlFlow::Exit;
-            } else if event.id == test_item.id() {
-                let _ = command_tx.send(BridgeCommand::Test);
-            } else if event.id == dismiss_item.id() {
-                let _ = command_tx.send(BridgeCommand::Dismiss);
-            } else if event.id == reconnect_item.id() {
-                let _ = command_tx.send(BridgeCommand::Reconnect);
-            } else if event.id == pause_item.id() {
-                let paused = pause_item.is_checked();
-                state.paused.store(paused, Ordering::Relaxed);
-                let _ = command_tx.send(BridgeCommand::SetPaused(paused));
-            }
-        }
+    let run_result = event_loop.run_app(&mut tray_loop);
+    tray_icon::menu::MenuEvent::set_event_handler(Option::<fn(tray_icon::menu::MenuEvent)>::None);
+    run_result.context("windows tray event loop failed")?;
 
-        if let Event::LoopDestroyed = event {
-            let _ = command_tx.send(BridgeCommand::Quit);
-        }
-    });
+    Ok(())
 }
 
 #[cfg(windows)]
