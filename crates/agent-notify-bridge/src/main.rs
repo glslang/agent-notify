@@ -220,7 +220,7 @@ async fn bridge_session(
     let (mut ws, _) = connect_async(&url)
         .await
         .context("failed to connect websocket")?;
-    info!(%url, "connected to agent-notify server");
+    info!(url = %redacted_url(&url), "connected to agent-notify server");
 
     send_status(&mut ws, config, &display, state, None).await?;
     ws.send(Message::Text(
@@ -341,6 +341,13 @@ fn websocket_url(server_url: &str, token: &str) -> anyhow::Result<String> {
     ))
 }
 
+fn redacted_url(url: &str) -> String {
+    match url.split_once('?') {
+        Some((base, _)) => format!("{base}?token=<redacted>"),
+        None => url.to_string(),
+    }
+}
+
 fn encode_query_component(value: &str) -> String {
     value
         .bytes()
@@ -376,5 +383,12 @@ mod tests {
             url,
             "wss://agent.example/v1/bridge/ws?token=a%20token%26with%3Dquery"
         );
+    }
+
+    #[test]
+    fn redacted_url_removes_query_token() {
+        let url = redacted_url("wss://agent.example/v1/bridge/ws?token=secret");
+
+        assert_eq!(url, "wss://agent.example/v1/bridge/ws?token=<redacted>");
     }
 }

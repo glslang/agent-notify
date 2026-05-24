@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dismissLatest, type AgentEventInput, postEvent, type WireAgentState } from "./client.js";
 import { localHostname } from "./hostname.js";
@@ -61,7 +62,7 @@ export function parseCliArgs(argv: readonly string[], env: Record<string, string
         return { exit: { code: 0, message: usage() } };
       }
       if (flag === "version") {
-        return { exit: { code: 0, message: "agent-notify-cli 0.1.0" } };
+        return { exit: { code: 0, message: `agent-notify-cli ${packageVersion()}` } };
       }
       dismiss = true;
       continue;
@@ -243,6 +244,16 @@ Options:
 function writeMessage(code: number, message: string): void {
   const stream = code === 0 ? process.stdout : process.stderr;
   stream.write(`${message.trimEnd()}\n`);
+}
+
+function packageVersion(): string {
+  try {
+    const packageJsonUrl = new URL("../../package.json", import.meta.url);
+    const packageJson = JSON.parse(readFileSync(packageJsonUrl, "utf8")) as { version?: unknown };
+    return typeof packageJson.version === "string" ? packageJson.version : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

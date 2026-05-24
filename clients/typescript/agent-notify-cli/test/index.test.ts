@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { buildEventInput, parseCliArgs } from "../src/index.js";
 
@@ -86,5 +87,15 @@ describe("parseCliArgs", () => {
 
     assert.equal(parsed.exit?.code, 2);
     assert.match(parsed.exit?.message ?? "", /--state must be one of/u);
+  });
+
+  it("reads --version from package.json", () => {
+    const packageJson = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    const parsed = parseCliArgs(["--version"]);
+
+    assert.equal(parsed.exit?.code, 0);
+    assert.equal(parsed.exit?.message, `agent-notify-cli ${packageJson.version}`);
   });
 });
