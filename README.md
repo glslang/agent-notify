@@ -1,15 +1,18 @@
 # agent-notify
 
-Server and Windows bridge for showing coding-agent status on a UHK80 OLED display.
+[![CI](https://github.com/glslang/agent-notify/actions/workflows/ci.yml/badge.svg)](https://github.com/glslang/agent-notify/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/glslang/agent-notify/blob/main/LICENSE)
 
-## Shape
+Rust workspace plus TypeScript CLI for pushing **coding-agent** status to a tiny HTTP/WebSocket server, then showing it on a **UHK80** OLED via a Windows system-tray bridge (HID locally—no GTK on the tray path).
 
-- `agent-notify-server`: Linux-friendly HTTP/WebSocket event collector.
-- `agent-notify-bridge`: Windows system tray bridge that connects outbound to the server and writes to the local UHK80 over HID.
-- `agent-notify-cli`: small hook sender for Codex or other coding agents.
-- `clients/typescript/agent-notify-cli`: npm hook sender with the same HTTP interface as the Rust CLI.
+## Components
 
-The Linux server never talks to the keyboard. The Windows machine that currently owns the UHK80 through the monitor USB/KVM updates the display locally.
+- **`agent-notify-server`**: HTTP + WebSocket event collector (friendly to run on Linux or elsewhere).
+- **`agent-notify-bridge`**: Windows tray app; connects to the server and updates the UHK80 over HID.
+- **`agent-notify-cli`**: Rust hook sender for Codex and similar agents.
+- **`clients/typescript/agent-notify-cli`**: Node 20+ CLI with the same HTTP API as the Rust binary; install and versioning are described in [`clients/typescript/agent-notify-cli/README.md`](clients/typescript/agent-notify-cli/README.md).
+
+The Linux server never drives the keyboard. The machine that currently owns the UHK80 (often through a monitor USB/KVM) runs the bridge and updates the display.
 
 ## Run the server
 
@@ -150,3 +153,7 @@ For development without a UHK80:
 ```sh
 AGENT_NOTIFY_TOKEN=change-me cargo run -p agent-notify-bridge -- --mock-display
 ```
+
+## Contributing
+
+Conventions, test commands (`cargo nextest`, TypeScript `npm test`), and security tips are in [`AGENTS.md`](AGENTS.md). Keep real `AGENT_NOTIFY_TOKEN` values and `bridge.toml` secrets out of git.
