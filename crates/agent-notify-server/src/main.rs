@@ -125,7 +125,6 @@ async fn bridge_ws(
 async fn handle_bridge_socket(state: AppState, socket: WebSocket) {
     let mut rx = state.tx.subscribe();
     let (mut sender, mut receiver) = socket.split();
-    let mut keyboard_present = false;
     let mut paused = false;
 
     if let Some(event) = live_latest(&state).await {
@@ -143,9 +142,13 @@ async fn handle_bridge_socket(state: AppState, socket: WebSocket) {
                     Ok(Message::Text(text)) => {
                         match serde_json::from_str::<BridgeClientMessage>(&text) {
                             Ok(BridgeClientMessage::Status { status }) => {
-                                keyboard_present = status.keyboard_present;
                                 paused = status.paused;
-                                debug!(host = %status.host, keyboard_present, paused, "bridge status");
+                                debug!(
+                                    host = %status.host,
+                                    keyboard_present = status.keyboard_present,
+                                    paused,
+                                    "bridge status"
+                                );
                             }
                             Ok(BridgeClientMessage::RequestLatest) => {
                                 if let Some(event) = live_latest(&state).await {
@@ -170,7 +173,7 @@ async fn handle_bridge_socket(state: AppState, socket: WebSocket) {
             }
             broadcast = rx.recv() => {
                 match broadcast {
-                    Ok(message) if keyboard_present && !paused => {
+                    Ok(message) if !paused => {
                         if !send_server_message(&mut sender, &message).await {
                             break;
                         }
