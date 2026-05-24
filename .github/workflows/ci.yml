@@ -55,6 +55,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -78,16 +80,20 @@ jobs:
         run: |
           npm ci
           npm run test:coverage
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: rust-lcov.info
           flags: rust
-          fail_ci_if_error: false
-      - uses: codecov/codecov-action@v5
+          verbose: true
+          fail_ci_if_error: true
+      - uses: codecov/codecov-action@v6
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: clients/typescript/agent-notify-cli/coverage/lcov.info
           flags: typescript
-          fail_ci_if_error: false
+          verbose: true
+          fail_ci_if_error: true
 
   typescript:
     name: TypeScript
