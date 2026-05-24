@@ -15,7 +15,9 @@ struct Args {
     #[arg(long, env = "AGENT_NOTIFY_REPO")]
     repo: Option<String>,
     #[arg(long, value_enum)]
-    state: StateArg,
+    state: Option<StateArg>,
+    #[arg(long)]
+    dismiss: bool,
     #[arg(long)]
     summary: Option<String>,
     #[arg(long)]
@@ -48,16 +50,24 @@ impl From<StateArg> for AgentState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if args.dismiss {
+        dismiss_latest(&args.server, &args.token).await?;
+        return Ok(());
+    }
+
     let host = match args.host {
         Some(host) => host,
         None => local_hostname()?,
     };
+    let state = args
+        .state
+        .context("--state is required unless --dismiss is supplied")?;
 
     let input = AgentEventInput {
         agent: args.agent,
         host,
         repo: args.repo,
-        state: args.state.into(),
+        state: state.into(),
         summary: args.summary,
         priority: args.priority,
         ttl_seconds: args.ttl_seconds,
@@ -72,6 +82,24 @@ async fn main() -> anyhow::Result<()> {
         .send()
         .await
         .context("failed to post event")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        bail!("server returned {status}: {body}");
+    }
+
+    Ok(())
+}
+
+async fn dismiss_latest(server: &str, token: &str) -> anyhow::Result<()> {
+    let url = format!("{}/v1/events/latest", server.trim_end_matches('/'));
+    let response = reqwest::Client::new()
+        .delete(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("failed to dismiss latest event")?;
 
     if !response.status().is_success() {
         let status = response.status();

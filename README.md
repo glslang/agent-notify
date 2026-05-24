@@ -28,6 +28,16 @@ cargo run -p agent-notify-cli -- \
   --summary "waiting for input"
 ```
 
+## Dismiss the current notification
+
+```sh
+AGENT_NOTIFY_SERVER=http://127.0.0.1:8787 \
+AGENT_NOTIFY_TOKEN=change-me \
+cargo run -p agent-notify-cli -- --dismiss
+```
+
+The Windows bridge tray menu also includes "Dismiss notification".
+
 ## Run the bridge
 
 On Windows, create `%APPDATA%\agent-notify\bridge.toml`. The bridge does not create this file automatically.
