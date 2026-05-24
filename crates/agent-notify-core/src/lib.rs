@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    process::Command,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -187,6 +190,16 @@ pub fn uhk_exec_macro_report(report_id: u8, command: &str) -> Result<Vec<u8>, Ev
     Ok(report)
 }
 
+pub fn local_hostname() -> Option<String> {
+    std::env::var("COMPUTERNAME")
+        .ok()
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(hostname_from_file)
+        .or_else(hostname_from_command)
+        .map(|value| normalize_field(&value))
+        .filter(|value| !value.is_empty())
+}
+
 pub fn concise_display_text(event: &AgentEvent) -> String {
     let mut parts = vec![
         short_token(&event.host, 10),
@@ -201,6 +214,28 @@ pub fn concise_display_text(event: &AgentEvent) -> String {
     }
 
     sanitize_macro_string(&parts.join(" "))
+}
+
+fn hostname_from_file() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .ok()
+            .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+fn hostname_from_command() -> Option<String> {
+    Command::new("hostname")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
 }
 
 fn quoted_macro_command(prefix: &str, value: &str) -> Result<String, EventError> {

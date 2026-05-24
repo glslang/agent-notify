@@ -2,7 +2,8 @@ mod settings;
 mod uhk;
 
 use agent_notify_core::{
-    BridgeClientMessage, BridgeServerMessage, BridgeStatus, macro_command_for_event,
+    BridgeClientMessage, BridgeServerMessage, BridgeStatus,
+    local_hostname as detect_local_hostname, macro_command_for_event,
 };
 use anyhow::Context;
 use clap::Parser;
@@ -329,9 +330,7 @@ fn encode_query_component(value: &str) -> String {
 }
 
 fn local_hostname() -> String {
-    std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "unknown".to_string())
+    detect_local_hostname().unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg(test)]
