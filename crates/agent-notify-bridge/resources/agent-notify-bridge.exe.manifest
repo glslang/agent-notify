@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+      type="win32"
+      name="agent-notify-bridge"
+      version="1.0.0.0"
+      processorArchitecture="*"/>
+  <!--
+    tray-icon's `common-controls-v6` feature statically imports TaskDialogIndirect
+    from ComCtl32.dll v6. v6 is only loaded when the executable declares this
+    dependency; without it the loader aborts at startup with
+    "the procedure entry point TaskDialogIndirect could not be located".
+  -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+          type="win32"
+          name="Microsoft.Windows.Common-Controls"
+          version="6.0.0.0"
+          processorArchitecture="*"
+          publicKeyToken="6595b64144ccf1df"
+          language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>

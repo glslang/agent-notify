@@ -1,0 +1,3 @@
+// Resource ID 1 (CREATEPROCESS_MANIFEST_RESOURCE_ID), type 24 (RT_MANIFEST):
+// embeds the application manifest into the executable.
+1 24 "agent-notify-bridge.exe.manifest"
