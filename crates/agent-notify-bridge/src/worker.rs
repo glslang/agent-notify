@@ -20,6 +20,11 @@ use tracing::{info, warn};
 
 const RECONNECT_BASE: Duration = Duration::from_millis(500);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
+/// A session that stayed connected at least this long counts as healthy, so a
+/// drop afterwards reconnects promptly. Shorter sessions are treated like a
+/// failed attempt and back off, to avoid hammering a server that accepts the
+/// handshake and then immediately closes.
+const STABLE_SESSION: Duration = Duration::from_secs(10);
 
 #[derive(Debug)]
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -81,20 +86,30 @@ pub async fn run_bridge_worker(
             tokio::time::sleep(delay).await;
         }
 
+        let started = tokio::time::Instant::now();
         match bridge_session(&config, &state, &mut commands).await {
             Ok(BridgeExit::Quit) => return Ok(()),
-            // User asked to reconnect, or a previously healthy socket dropped:
-            // retry promptly without escalating backoff.
+            // User asked to reconnect: retry now, regardless of session length.
             Ok(BridgeExit::Reconnect) => failures = 0,
+            // A drop after a healthy session reconnects promptly; a drop right
+            // after connecting backs off so a flapping server isn't hammered.
             Ok(BridgeExit::Disconnected) => {
                 warn!("bridge websocket disconnected");
-                failures = 0;
+                failures = next_failures(failures, started.elapsed());
             }
             Err(err) => {
                 warn!(?err, "bridge session failed");
                 failures = failures.saturating_add(1);
             }
         }
+    }
+}
+
+fn next_failures(failures: u32, session: Duration) -> u32 {
+    if session >= STABLE_SESSION {
+        0
+    } else {
+        failures.saturating_add(1)
     }
 }
 
@@ -261,6 +276,16 @@ pub fn local_hostname() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn next_failures_backs_off_on_quick_drop_and_resets_when_stable() {
+        // Immediate close after the handshake escalates the backoff.
+        assert_eq!(next_failures(0, Duration::from_millis(50)), 1);
+        assert_eq!(next_failures(3, Duration::from_millis(50)), 4);
+        // A session that stayed up long enough is treated as healthy.
+        assert_eq!(next_failures(3, STABLE_SESSION), 0);
+        assert_eq!(next_failures(3, Duration::from_secs(120)), 0);
+    }
 
     #[test]
     fn reconnect_delay_grows_and_caps() {
