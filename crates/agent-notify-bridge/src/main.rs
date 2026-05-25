@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod icons;
 mod settings;
 #[cfg(windows)]
 mod tray;
