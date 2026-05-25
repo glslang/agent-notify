@@ -1,23 +1,27 @@
+use crate::icons::{IconSet, load_icon_set};
 use crate::settings::BridgeConfig;
-use crate::worker::{BridgeCommand, BridgeRuntimeState, run_bridge_worker};
+use crate::worker::{BridgeCommand, BridgeRuntimeState, IconSink, IconState, run_bridge_worker};
 use anyhow::Context;
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
 use tracing::error;
 use tray_icon::{
-    Icon, TrayIconBuilder,
+    TrayIcon, TrayIconBuilder,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
 };
 
 #[derive(Debug)]
 enum TrayUserEvent {
     Menu(tray_icon::menu::MenuEvent),
+    SetIcon(IconState),
 }
 
 struct TrayMenuLoop {
     command_tx: mpsc::UnboundedSender<BridgeCommand>,
     paused: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pause_item: std::rc::Rc<CheckMenuItem>,
+    tray: TrayIcon,
+    icons: IconSet,
     quit_id: tray_icon::menu::MenuId,
     test_id: tray_icon::menu::MenuId,
     dismiss_id: tray_icon::menu::MenuId,
@@ -41,7 +45,15 @@ impl winit::application::ApplicationHandler<TrayUserEvent> for TrayMenuLoop {
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: TrayUserEvent,
     ) {
-        let TrayUserEvent::Menu(menu_event) = event;
+        let menu_event = match event {
+            TrayUserEvent::Menu(menu_event) => menu_event,
+            TrayUserEvent::SetIcon(state) => {
+                if let Err(err) = self.tray.set_icon(Some(self.icons.get(state))) {
+                    error!(?err, ?state, "failed to set tray icon");
+                }
+                return;
+            }
+        };
         let id = menu_event.id().clone();
         if id == self.quit_id {
             let _ = self.command_tx.send(BridgeCommand::Quit);
@@ -89,11 +101,11 @@ pub fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&quit_item)?;
 
-    let icon = Icon::from_rgba(make_icon_rgba(), 16, 16)?;
-    let _tray = TrayIconBuilder::new()
+    let icons = load_icon_set(crate::icons::detect_theme())?;
+    let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("Agent Notify")
-        .with_icon(icon)
+        .with_icon(icons.get(IconState::Idle))
         .build()?;
 
     let pause_item = std::rc::Rc::new(pause_item);
@@ -102,6 +114,13 @@ pub fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
     let test_id = test_item.id().clone();
     let dismiss_id = dismiss_item.id().clone();
     let reconnect_id = reconnect_item.id().clone();
+
+    // The worker thread reports state changes here; forward them to the event
+    // loop so the icon is swapped on the UI thread that owns the tray.
+    let icon_proxy = event_loop.create_proxy();
+    let icon_sink: IconSink = Box::new(move |state| {
+        let _ = icon_proxy.send_event(TrayUserEvent::SetIcon(state));
+    });
 
     let (command_tx, command_rx) = mpsc::unbounded_channel();
     let state = BridgeRuntimeState::new();
@@ -114,7 +133,12 @@ pub fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
                 return;
             }
         };
-        if let Err(err) = runtime.block_on(run_bridge_worker(config, worker_state, command_rx)) {
+        if let Err(err) = runtime.block_on(run_bridge_worker(
+            config,
+            worker_state,
+            command_rx,
+            icon_sink,
+        )) {
             error!(?err, "bridge worker stopped");
         }
     });
@@ -123,6 +147,8 @@ pub fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
         command_tx,
         paused: state.paused,
         pause_item,
+        tray,
+        icons,
         quit_id,
         test_id,
         dismiss_id,
@@ -135,19 +161,4 @@ pub fn run_windows_tray(config: BridgeConfig) -> anyhow::Result<()> {
     run_result.context("windows tray event loop failed")?;
 
     Ok(())
-}
-
-fn make_icon_rgba() -> Vec<u8> {
-    let mut data = Vec::with_capacity(16 * 16 * 4);
-    for y in 0..16 {
-        for x in 0..16 {
-            let active = (3..=12).contains(&x) && (3..=12).contains(&y);
-            if active {
-                data.extend_from_slice(&[0x27, 0xae, 0x60, 0xff]);
-            } else {
-                data.extend_from_slice(&[0, 0, 0, 0]);
-            }
-        }
-    }
-    data
 }

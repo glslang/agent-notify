@@ -29,5 +29,9 @@ tracing-subscriber.workspace = true
 # there is still no GTK4 backend in crates.io tray-icon/muda as of tray-icon 0.24—track upstream or
 # keep non-GTK event loops until one lands.
 hidapi = { version = "2.6.5", default-features = false, features = ["windows-native"] }
+# Decodes the embedded state .ico files to RGBA for tray-icon (`Icon::from_rgba`).
+ico = "0.5"
 tray-icon = { version = "0.24", default-features = false, features = ["common-controls-v6"] }
+# Reads the SystemUsesLightTheme registry value to pick the light/dark tray icon set.
+windows-sys = { version = "0.61", features = ["Win32_System_Registry", "Win32_Foundation"] }
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }

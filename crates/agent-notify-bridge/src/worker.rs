@@ -36,6 +36,43 @@ pub enum BridgeCommand {
     Quit,
 }
 
+/// The tray icon the bridge should currently show. Derived from the latest
+/// event's `AgentState` plus the bridge-level pause flag; not part of the wire
+/// protocol, so it lives here rather than in `agent-notify-core`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub enum IconState {
+    Idle,
+    Running,
+    Waiting,
+    Done,
+    Failed,
+    Paused,
+}
+
+/// Callback the worker uses to report icon-state changes to the UI. The Windows
+/// tray forwards these to the winit event loop; the console build ignores them.
+pub type IconSink = Box<dyn Fn(IconState) + Send>;
+
+fn icon_for_state(state: AgentState) -> IconState {
+    match state {
+        AgentState::Running => IconState::Running,
+        AgentState::WaitingInput => IconState::Waiting,
+        AgentState::Done => IconState::Done,
+        AgentState::Failed => IconState::Failed,
+    }
+}
+
+/// Pause takes precedence over any event; otherwise the latest event's icon, or
+/// `Idle` when there is no active event.
+fn effective_icon(current: Option<AgentState>, paused: bool) -> IconState {
+    if paused {
+        IconState::Paused
+    } else {
+        current.map(icon_for_state).unwrap_or(IconState::Idle)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BridgeRuntimeState {
     /// Source of truth for pause state, owned by the bridge. The server only
@@ -70,13 +107,16 @@ pub fn run_console(config: BridgeConfig) -> anyhow::Result<()> {
         }
     });
     let state = BridgeRuntimeState::new();
-    runtime.block_on(run_bridge_worker(config, state, rx))
+    // No tray on this path, so icon-state updates have nowhere to go.
+    let icon_sink: IconSink = Box::new(|_| {});
+    runtime.block_on(run_bridge_worker(config, state, rx, icon_sink))
 }
 
 pub async fn run_bridge_worker(
     config: BridgeConfig,
     state: BridgeRuntimeState,
     mut commands: mpsc::UnboundedReceiver<BridgeCommand>,
+    icon_sink: IconSink,
 ) -> anyhow::Result<()> {
     let mut failures: u32 = 0;
     loop {
@@ -87,7 +127,7 @@ pub async fn run_bridge_worker(
         }
 
         let started = tokio::time::Instant::now();
-        match bridge_session(&config, &state, &mut commands).await {
+        match bridge_session(&config, &state, &mut commands, &icon_sink).await {
             Ok(BridgeExit::Quit) => return Ok(()),
             // User asked to reconnect: retry now, regardless of session length.
             Ok(BridgeExit::Reconnect) => failures = 0,
@@ -95,10 +135,12 @@ pub async fn run_bridge_worker(
             // after connecting backs off so a flapping server isn't hammered.
             Ok(BridgeExit::Disconnected) => {
                 warn!("bridge websocket disconnected");
+                icon_sink(IconState::Idle);
                 failures = next_failures(failures, started.elapsed());
             }
             Err(err) => {
                 warn!(?err, "bridge session failed");
+                icon_sink(IconState::Idle);
                 failures = failures.saturating_add(1);
             }
         }
@@ -138,6 +180,7 @@ async fn bridge_session(
     config: &BridgeConfig,
     state: &BridgeRuntimeState,
     commands: &mut mpsc::UnboundedReceiver<BridgeCommand>,
+    icon_sink: &IconSink,
 ) -> anyhow::Result<BridgeExit> {
     let url = websocket_url(&config.server_url, &config.token)?;
     let display = DisplayAdapter::new(config.mock_display);
@@ -154,6 +197,14 @@ async fn bridge_session(
 
     let mut heartbeat = tokio::time::interval(Duration::from_secs(5));
     let mut last_display: Option<String> = None;
+    // Latest event state we are showing; drives the tray icon together with the
+    // pause flag. The server re-sends the latest event right after connecting,
+    // so starting from `None` (Idle) self-corrects within the first round-trip.
+    let mut current_state: Option<AgentState> = None;
+    icon_sink(effective_icon(
+        current_state,
+        state.paused.load(Ordering::Relaxed),
+    ));
 
     loop {
         tokio::select! {
@@ -166,12 +217,16 @@ async fn bridge_session(
                     Some(BridgeCommand::Reconnect) => return Ok(BridgeExit::Reconnect),
                     Some(BridgeCommand::SetPaused(paused)) => {
                         state.paused.store(paused, Ordering::Relaxed);
+                        icon_sink(effective_icon(current_state, paused));
                         send_status(&mut ws, config, &display, state, last_display.clone()).await?;
                     }
                     Some(BridgeCommand::Test) => {
                         let command = test_macro_command(config)?;
                         display.display_macro_command(&command)?;
                         last_display = Some(command);
+                        // The test notification is a synthetic Done event.
+                        current_state = Some(AgentState::Done);
+                        icon_sink(effective_icon(current_state, state.paused.load(Ordering::Relaxed)));
                         send_status(&mut ws, config, &display, state, last_display.clone()).await?;
                     }
                     Some(BridgeCommand::Dismiss) => {
@@ -180,6 +235,8 @@ async fn bridge_session(
                         ))
                         .await?;
                         clear_display(&display, &mut last_display, "tray");
+                        current_state = None;
+                        icon_sink(effective_icon(current_state, state.paused.load(Ordering::Relaxed)));
                         send_status(&mut ws, config, &display, state, last_display.clone()).await?;
                     }
                     None => return Ok(BridgeExit::Quit),
@@ -203,10 +260,17 @@ async fn bridge_session(
                                     continue;
                                 }
                                 last_display = Some(command);
+                                current_state = Some(event.state);
+                                icon_sink(effective_icon(current_state, false));
                             }
                             BridgeServerMessage::Clear { reason } => {
                                 info!(%reason, "clear requested");
                                 clear_display(&display, &mut last_display, &reason);
+                                current_state = None;
+                                icon_sink(effective_icon(
+                                    current_state,
+                                    state.paused.load(Ordering::Relaxed),
+                                ));
                             }
                         }
                     }
@@ -285,6 +349,35 @@ mod tests {
         // A session that stayed up long enough is treated as healthy.
         assert_eq!(next_failures(3, STABLE_SESSION), 0);
         assert_eq!(next_failures(3, Duration::from_secs(120)), 0);
+    }
+
+    #[test]
+    fn effective_icon_maps_states_and_pause_wins() {
+        // Each agent state maps to its icon.
+        assert_eq!(
+            effective_icon(Some(AgentState::Running), false),
+            IconState::Running
+        );
+        assert_eq!(
+            effective_icon(Some(AgentState::WaitingInput), false),
+            IconState::Waiting
+        );
+        assert_eq!(
+            effective_icon(Some(AgentState::Done), false),
+            IconState::Done
+        );
+        assert_eq!(
+            effective_icon(Some(AgentState::Failed), false),
+            IconState::Failed
+        );
+        // No active event is idle.
+        assert_eq!(effective_icon(None, false), IconState::Idle);
+        // Pause takes precedence over any event, and over idle.
+        assert_eq!(
+            effective_icon(Some(AgentState::Failed), true),
+            IconState::Paused
+        );
+        assert_eq!(effective_icon(None, true), IconState::Paused);
     }
 
     #[test]
