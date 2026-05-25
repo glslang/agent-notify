@@ -8,7 +8,7 @@ mod url;
 mod worker;
 
 use clap::Parser;
-use settings::load_config;
+use settings::{load_config, validate};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Debug, Parser)]
@@ -29,6 +29,9 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    // Layer precedence: CLI flags override the file/env base, then the merged
+    // result is validated so a token from any layer (including --token alone)
+    // is accepted.
     let mut config = load_config(args.config.as_deref())?;
     if let Some(server) = args.server {
         config.server_url = server;
@@ -39,6 +42,7 @@ fn main() -> anyhow::Result<()> {
     if args.mock_display {
         config.mock_display = true;
     }
+    validate(&config)?;
 
     #[cfg(windows)]
     {
