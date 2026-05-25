@@ -27,7 +27,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-${{ runner.os }}
+          shared-key: rust-lint-${{ runner.os }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -43,7 +43,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-${{ runner.os }}
+          shared-key: rust-test-${{ runner.os }}
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
@@ -64,7 +64,7 @@ jobs:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-${{ runner.os }}
+          shared-key: rust-coverage-${{ runner.os }}
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest,cargo-llvm-cov

@@ -159,6 +159,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), en
 
   try {
     if (options.dismiss) {
+      warnIgnoredWithDismiss(options);
       await dismissLatest(options.server, options.token);
       return 0;
     }
@@ -173,6 +174,21 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), en
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
+  }
+}
+
+function warnIgnoredWithDismiss(options: CliOptions): void {
+  const ignored = [
+    options.state !== undefined ? "--state" : undefined,
+    options.summary !== undefined ? "--summary" : undefined,
+    options.priority !== undefined ? "--priority" : undefined,
+    options.ttlSeconds !== undefined ? "--ttl-seconds" : undefined,
+    options.runId !== undefined ? "--run-id" : undefined,
+    options.repo !== undefined ? "--repo" : undefined,
+  ].filter((flag): flag is string => flag !== undefined);
+
+  if (ignored.length > 0) {
+    process.stderr.write(`warning: --dismiss ignores ${ignored.join(", ")}\n`);
   }
 }
 
