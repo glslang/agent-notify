@@ -18,28 +18,65 @@ pub struct BridgeConfig {
     pub mock_display: bool,
 }
 
-/// Load the base config from a file or, failing that, the environment. The token
-/// may be empty here: CLI flags are layered on top afterwards, and the merged
-/// result is checked by [`validate`]. This ordering lets `--token`/`--server`
-/// bootstrap a run with no config file or env vars present.
+const DEFAULT_SERVER: &str = "http://127.0.0.1:8787";
+
+/// Load the merged file + environment config. Per-field precedence is the config
+/// file first, then the environment, then the built-in default, so a `bridge.toml`
+/// that sets only `server_url` still picks up `AGENT_NOTIFY_TOKEN` from the
+/// environment instead of the file shadowing the environment wholesale. CLI flags
+/// are layered on top by `main`, and the final result is checked by [`validate`];
+/// the token may be empty here.
 pub fn load_config(path: Option<&Path>) -> anyhow::Result<BridgeConfig> {
-    if let Some(path) = path {
-        return read_config(path);
+    let env = env_config();
+    match load_file(path)? {
+        Some(file) => Ok(overlay_file(env, file)),
+        None => Ok(env),
     }
+}
 
-    for path in config_search_paths() {
-        if path.exists() {
-            return read_config(&path);
-        }
-    }
-
-    Ok(BridgeConfig {
+/// Lowest layer: environment variables, with the built-in default server. The
+/// token is empty when `AGENT_NOTIFY_TOKEN` is unset.
+fn env_config() -> BridgeConfig {
+    BridgeConfig {
         server_url: std::env::var("AGENT_NOTIFY_SERVER")
-            .unwrap_or_else(|_| "http://127.0.0.1:8787".to_string()),
+            .unwrap_or_else(|_| DEFAULT_SERVER.to_string()),
         token: std::env::var("AGENT_NOTIFY_TOKEN").unwrap_or_default(),
         hostname: std::env::var("AGENT_NOTIFY_HOST").ok(),
         mock_display: false,
-    })
+    }
+}
+
+/// Overlay the file's values onto the environment-derived `base`, for each field
+/// the file actually provides. Fields the file omits (or leaves blank) keep the
+/// environment value, so the two layers compose.
+fn overlay_file(mut base: BridgeConfig, file: BridgeConfig) -> BridgeConfig {
+    if !file.server_url.trim().is_empty() {
+        base.server_url = file.server_url;
+    }
+    if !file.token.trim().is_empty() {
+        base.token = file.token;
+    }
+    if file.hostname.is_some() {
+        base.hostname = file.hostname;
+    }
+    if file.mock_display {
+        base.mock_display = true;
+    }
+    base
+}
+
+/// Read the explicit `--config` path (which must exist) or the first discovered
+/// `bridge.toml`, returning `None` when no config file is present.
+fn load_file(path: Option<&Path>) -> anyhow::Result<Option<BridgeConfig>> {
+    if let Some(path) = path {
+        return read_config(path).map(Some);
+    }
+    for candidate in config_search_paths() {
+        if candidate.exists() {
+            return read_config(&candidate).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 /// Validate the fully-merged config (file/env + CLI overrides). Kept separate
@@ -134,6 +171,43 @@ mod tests {
         assert!(validate(&config).is_err());
         config.token = "from-cli".to_string();
         assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn file_without_token_keeps_env_token() {
+        // The reported case: bridge.toml sets server_url, the secret comes from
+        // AGENT_NOTIFY_TOKEN. The env token must survive the file overlay.
+        let env = sample("http://env:8787", "env-token");
+        let file = sample("http://file:8787", "");
+        let merged = overlay_file(env, file);
+        assert_eq!(merged.server_url, "http://file:8787");
+        assert_eq!(merged.token, "env-token");
+    }
+
+    #[test]
+    fn file_values_override_env_when_present() {
+        let mut env = sample("http://env:8787", "env-token");
+        env.hostname = Some("env-host".to_string());
+        let mut file = sample("http://file:8787", "file-token");
+        file.hostname = Some("file-host".to_string());
+        file.mock_display = true;
+        let merged = overlay_file(env, file);
+        assert_eq!(merged.server_url, "http://file:8787");
+        assert_eq!(merged.token, "file-token");
+        assert_eq!(merged.hostname.as_deref(), Some("file-host"));
+        assert!(merged.mock_display);
+    }
+
+    #[test]
+    fn file_omitting_fields_keeps_env_values() {
+        let mut env = sample("http://env:8787", "env-token");
+        env.hostname = Some("env-host".to_string());
+        // A file that only sets server_url leaves the rest to the environment.
+        let file = sample("http://file:8787", "");
+        let merged = overlay_file(env, file);
+        assert_eq!(merged.token, "env-token");
+        assert_eq!(merged.hostname.as_deref(), Some("env-host"));
+        assert!(!merged.mock_display);
     }
 
     #[test]
