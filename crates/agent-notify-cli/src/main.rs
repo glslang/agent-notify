@@ -51,6 +51,7 @@ impl From<StateArg> for AgentState {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     if args.dismiss {
+        warn_ignored_with_dismiss(&args);
         dismiss_latest(&args.server, &args.token).await?;
         return Ok(());
     }
@@ -90,6 +91,24 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn warn_ignored_with_dismiss(args: &Args) {
+    let ignored = [
+        args.state.is_some().then_some("--state"),
+        args.summary.is_some().then_some("--summary"),
+        args.priority.is_some().then_some("--priority"),
+        args.ttl_seconds.is_some().then_some("--ttl-seconds"),
+        args.run_id.is_some().then_some("--run-id"),
+        args.repo.is_some().then_some("--repo"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    if !ignored.is_empty() {
+        eprintln!("warning: --dismiss ignores {}", ignored.join(", "));
+    }
 }
 
 async fn dismiss_latest(server: &str, token: &str) -> anyhow::Result<()> {

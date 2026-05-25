@@ -133,6 +133,12 @@ When the Windows bridge is paused, the server still accepts events and updates `
 
 The current server keeps state in memory and broadcasts from a single process. It is intended for a small single-server setup, not multi-instance high availability or audit logging.
 
+## Security and deployment
+
+Authentication is a single bearer token (`AGENT_NOTIFY_TOKEN`), sent in the `Authorization` header for HTTP and as a `?token=` query parameter for the bridge WebSocket. The server logs only the request method and path, never the query string, so the token does not land in access logs—but a TLS-terminating proxy in front of it might log full URLs, so configure that accordingly.
+
+The server does not terminate TLS itself. For any non-loopback deployment, front it with a reverse proxy that provides TLS; otherwise the bearer token travels in cleartext. The server applies a request body limit and a global concurrency limit, but it performs no origin checking on WebSocket upgrades and no per-client rate limiting, so treat the token as the only access control and keep the listener off untrusted networks.
+
 ## Run the bridge
 
 On Windows, create `%APPDATA%\agent-notify\bridge.toml`. The bridge does not create this file automatically.

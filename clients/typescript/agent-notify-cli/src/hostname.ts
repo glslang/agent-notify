@@ -42,11 +42,20 @@ function readHostnameFile(path: string): string | undefined {
 }
 
 function runHostnameCommand(): string | undefined {
-  try {
-    return execFileSync("hostname", { encoding: "utf8" });
-  } catch {
-    return undefined;
+  // Prefer absolute paths so a hostile PATH cannot shim a fake `hostname`;
+  // fall back to a PATH lookup only if none of them resolve.
+  const candidates =
+    process.platform === "win32" ? ["hostname"] : ["/bin/hostname", "/usr/bin/hostname", "hostname"];
+
+  for (const program of candidates) {
+    try {
+      return execFileSync(program, { encoding: "utf8" });
+    } catch {
+      // try the next candidate
+    }
   }
+
+  return undefined;
 }
 
 function normalizeField(value: string | undefined): string | undefined {

@@ -58,6 +58,10 @@ pub struct AgentEvent {
     pub id: Uuid,
     pub received_at_unix_ms: u64,
     pub expires_at_unix_ms: u64,
+    /// Monotonic acceptance order assigned by the server. Used to break priority
+    /// ties without depending on wall-clock time, which can jump under NTP.
+    #[serde(default)]
+    pub seq: u64,
     pub agent: String,
     pub host: String,
     pub repo: Option<String>,
@@ -129,6 +133,7 @@ impl AgentEventInput {
             id: Uuid::new_v4(),
             received_at_unix_ms: now,
             expires_at_unix_ms: now + ttl_ms,
+            seq: 0,
             agent: normalize_field(&self.agent),
             host: normalize_field(&self.host),
             repo: self.repo.map(|value| normalize_field(&value)),
@@ -153,9 +158,7 @@ pub fn choose_latest(current: Option<AgentEvent>, next: AgentEvent) -> AgentEven
     match current {
         Some(current) if same_work_item(&current, &next) => next,
         Some(current)
-            if current.is_live()
-                && (current.priority, current.received_at_unix_ms)
-                    > (next.priority, next.received_at_unix_ms) =>
+            if current.is_live() && (current.priority, current.seq) > (next.priority, next.seq) =>
         {
             current
         }
@@ -241,11 +244,21 @@ fn hostname_from_file() -> Option<String> {
 }
 
 fn hostname_from_command() -> Option<String> {
-    Command::new("hostname")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
+    // Prefer absolute paths so a hostile PATH on the agent host cannot shim a
+    // fake `hostname`; fall back to a PATH lookup only if none are present.
+    let candidates: &[&str] = if cfg!(windows) {
+        &["hostname"]
+    } else {
+        &["/bin/hostname", "/usr/bin/hostname", "hostname"]
+    };
+
+    candidates.iter().find_map(|program| {
+        Command::new(program)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+    })
 }
 
 fn quoted_macro_command(prefix: &str, value: &str) -> Result<String, EventError> {
@@ -426,6 +439,20 @@ mod tests {
         let mut high = event(AgentState::WaitingInput, None);
         high.host = "other-host".into();
         assert_eq!(choose_latest(Some(low), high.clone()).id, high.id);
+    }
+
+    #[test]
+    fn latest_breaks_priority_tie_by_seq_not_clock() {
+        let mut current = event(AgentState::Running, Some(50));
+        current.host = "host-a".into();
+        current.seq = 10;
+        // Equal priority but lower seq, even with a far-future receive clock.
+        let mut next = event(AgentState::Running, Some(50));
+        next.host = "host-b".into();
+        next.seq = 5;
+        next.received_at_unix_ms = current.received_at_unix_ms + 1_000_000;
+
+        assert_eq!(choose_latest(Some(current.clone()), next).id, current.id);
     }
 
     #[test]
