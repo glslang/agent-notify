@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.1.0, without v prefix)"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bridge-installer:
+    name: Build bridge installer (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-release-bridge-${{ runner.os }}
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $v = "${{ inputs.version }}".Trim()
+          } else {
+            $v = "${{ github.ref_name }}".TrimStart("v")
+          }
+          if ($v -notmatch '^\d+\.\d+\.\d+') {
+            throw "Version must look like MAJOR.MINOR.PATCH, got: $v"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=v$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install Inno Setup
+        run: winget install --id JRSoftware.InnoSetup -e --accept-source-agreements --accept-package-agreements --silent
+
+      - name: Build bridge binary
+        run: cargo build --release -p agent-notify-bridge --locked
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            throw "ISCC.exe not found after Inno Setup install"
+          }
+          & $iscc packaging/windows/agent-notify-bridge.iss `
+            "/DAppVersion=${{ steps.version.outputs.version }}" `
+            "/DReleaseDir=$PWD/target/release"
+
+      - name: SHA256 checksum
+        shell: pwsh
+        run: |
+          $setup = "packaging/windows/output/agent-notify-bridge-setup.exe"
+          $hash = (Get-FileHash -Path $setup -Algorithm SHA256).Hash
+          "$hash  agent-notify-bridge-setup.exe" | Out-File -Encoding ascii packaging/windows/output/agent-notify-bridge-setup.exe.sha256
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Agent Notify Bridge ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            packaging/windows/output/agent-notify-bridge-setup.exe
+            packaging/windows/output/agent-notify-bridge-setup.exe.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

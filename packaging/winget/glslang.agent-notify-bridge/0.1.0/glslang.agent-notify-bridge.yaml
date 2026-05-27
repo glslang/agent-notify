@@ -1,0 +1,34 @@
+# Template for winget-pkgs submission. After CI publishes a release, update
+# PackageVersion, InstallerSha256 (from the .sha256 sidecar), and verify InstallerUrl.
+PackageIdentifier: glslang.agent-notify-bridge
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: glslang
+PublisherUrl: https://github.com/glslang
+PublisherSupportUrl: https://github.com/glslang/agent-notify/issues
+PackageName: Agent Notify Bridge
+PackageUrl: https://github.com/glslang/agent-notify
+License: MIT
+LicenseUrl: https://github.com/glslang/agent-notify/blob/main/LICENSE
+ShortDescription: Windows tray bridge for agent-notify (UHK80 OLED via HID)
+Description: |-
+  Connects a Windows machine with a UHK80 keyboard to an agent-notify server,
+  showing coding-agent status on the keyboard OLED via the system tray.
+Moniker: agent-notify-bridge
+Tags:
+  - agent-notify
+  - uhk80
+  - tray
+ReleaseNotesUrl: https://github.com/glslang/agent-notify/releases/tag/v0.1.0
+Installers:
+  - Architecture: x64
+    InstallerType: inno
+    Scope: user
+    InstallerUrl: https://github.com/glslang/agent-notify/releases/download/v0.1.0/agent-notify-bridge-setup.exe
+    InstallerSha256: REPLACE_AFTER_RELEASE
+    InstallerSwitches:
+      Silent: /VERYSILENT /SP- /SUPPRESSMSGBOXES
+      SilentWithProgress: /VERYSILENT /SP- /SUPPRESSMSGBOXES
+    UpgradeBehavior: install
+ManifestType: singleton
+ManifestVersion: 1.6.0

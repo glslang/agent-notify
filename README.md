@@ -139,9 +139,37 @@ Authentication is a single bearer token (`AGENT_NOTIFY_TOKEN`), sent in the `Aut
 
 The server does not terminate TLS itself. For any non-loopback deployment, front it with a reverse proxy that provides TLS; otherwise the bearer token travels in cleartext. The server applies a request body limit and a global concurrency limit, but it performs no origin checking on WebSocket upgrades and no per-client rate limiting, so treat the token as the only access control and keep the listener off untrusted networks.
 
-## Run the bridge
+## Run the bridge (Windows)
 
-On Windows, create `%APPDATA%\agent-notify\bridge.toml`. The bridge does not create this file automatically.
+### Install from a release (recommended)
+
+Releases are built on GitHub Actions when you push a `v*` tag (for example `v0.1.0`). Download `agent-notify-bridge-setup.exe` from [Releases](https://github.com/glslang/agent-notify/releases), or after the package is listed in winget-pkgs:
+
+```powershell
+winget install glslang.agent-notify-bridge
+```
+
+The installer writes `%APPDATA%\agent-notify\bridge.toml` (only if it does not already exist), installs the tray app under `%LOCALAPPDATA%\Programs\agent-notify-bridge\`, and can register login autostart.
+
+Silent install with server URL and token:
+
+```powershell
+agent-notify-bridge-setup.exe /VERYSILENT /SP- /SERVERURL=http://linux-server:8787 /TOKEN=change-me
+```
+
+winget equivalent:
+
+```powershell
+winget install glslang.agent-notify-bridge --override '/VERYSILENT /SP- /SERVERURL=http://linux-server:8787 /TOKEN=change-me'
+```
+
+Avoid putting real tokens on shared command lines when possible; prefer the interactive installer or editing `bridge.toml` directly.
+
+See [`packaging/windows/README.md`](packaging/windows/README.md) and [`packaging/winget/README.md`](packaging/winget/README.md) for maintainer notes.
+
+### Manual config and development
+
+You can also create `%APPDATA%\agent-notify\bridge.toml` yourself. The bridge does not create this file unless the installer (or you) writes it.
 
 ```toml
 server_url = "http://linux-server:8787"
