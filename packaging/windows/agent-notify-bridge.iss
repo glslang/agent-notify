@@ -148,7 +148,7 @@ begin
     ConfigPage.Values[0] := ServerUrl;
   if Token <> '' then
     ConfigPage.Values[1] := Token;
-  ConfigPage.ShouldSkipPage := @ShouldSkipConfigPage;
+  ConfigPage.OnShouldSkipPage := @ShouldSkipConfigPage;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
