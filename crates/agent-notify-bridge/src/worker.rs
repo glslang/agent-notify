@@ -1,9 +1,9 @@
+use crate::display::DisplayAdapter;
 use crate::settings::BridgeConfig;
-use crate::uhk::DisplayAdapter;
 use crate::url::{redacted_url, websocket_url};
 use agent_notify_core::{
-    AgentEventInput, AgentState, BridgeClientMessage, BridgeServerMessage, clear_macro_command,
-    local_hostname as detect_local_hostname, macro_command_for_event,
+    AgentEvent, AgentEventInput, AgentState, BridgeClientMessage, BridgeServerMessage,
+    local_hostname as detect_local_hostname,
 };
 use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
@@ -86,6 +86,12 @@ impl BridgeRuntimeState {
         Self {
             paused: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+impl Default for BridgeRuntimeState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -183,13 +189,13 @@ async fn bridge_session(
     icon_sink: &IconSink,
 ) -> anyhow::Result<BridgeExit> {
     let url = websocket_url(&config.server_url, &config.token)?;
-    let display = DisplayAdapter::new(config.mock_display);
+    let mut display = DisplayAdapter::new(config.mock_display);
     let (mut ws, _) = tokio_tungstenite::connect_async(&url)
         .await
         .context("failed to connect websocket")?;
     info!(url = %redacted_url(&url), "connected to agent-notify server");
 
-    send_status(&mut ws, config, &display, state, None).await?;
+    send_status(&mut ws, config, &mut display, state, None).await?;
     ws.send(Message::Text(
         serde_json::to_string(&BridgeClientMessage::RequestLatest)?.into(),
     ))
@@ -209,7 +215,7 @@ async fn bridge_session(
     loop {
         tokio::select! {
             _ = heartbeat.tick() => {
-                send_status(&mut ws, config, &display, state, last_display.clone()).await?;
+                send_status(&mut ws, config, &mut display, state, last_display.clone()).await?;
             }
             command = commands.recv() => {
                 match command {
@@ -218,26 +224,26 @@ async fn bridge_session(
                     Some(BridgeCommand::SetPaused(paused)) => {
                         state.paused.store(paused, Ordering::Relaxed);
                         icon_sink(effective_icon(current_state, paused));
-                        send_status(&mut ws, config, &display, state, last_display.clone()).await?;
+                        send_status(&mut ws, config, &mut display, state, last_display.clone()).await?;
                     }
                     Some(BridgeCommand::Test) => {
-                        let command = test_macro_command(config)?;
-                        display.display_macro_command(&command)?;
-                        last_display = Some(command);
+                        let event = test_event(config)?;
+                        let display_text = display.display_event(&event)?;
+                        last_display = Some(display_text);
                         // The test notification is a synthetic Done event.
                         current_state = Some(AgentState::Done);
                         icon_sink(effective_icon(current_state, state.paused.load(Ordering::Relaxed)));
-                        send_status(&mut ws, config, &display, state, last_display.clone()).await?;
+                        send_status(&mut ws, config, &mut display, state, last_display.clone()).await?;
                     }
                     Some(BridgeCommand::Dismiss) => {
                         ws.send(Message::Text(
                             serde_json::to_string(&BridgeClientMessage::DismissLatest)?.into(),
                         ))
                         .await?;
-                        clear_display(&display, &mut last_display, "tray");
+                        clear_display(&mut display, &mut last_display, "tray");
                         current_state = None;
                         icon_sink(effective_icon(current_state, state.paused.load(Ordering::Relaxed)));
-                        send_status(&mut ws, config, &display, state, last_display.clone()).await?;
+                        send_status(&mut ws, config, &mut display, state, last_display.clone()).await?;
                     }
                     None => return Ok(BridgeExit::Quit),
                 }
@@ -254,18 +260,23 @@ async fn bridge_session(
                                 if state.paused.load(Ordering::Relaxed) {
                                     continue;
                                 }
-                                let command = macro_command_for_event(&event)?;
-                                if let Err(err) = display.display_macro_command(&command) {
-                                    warn!(?err, %command, "failed to update UHK display");
+                                let display_text = match display.display_event(&event) {
+                                    Ok(display_text) => display_text,
+                                    Err(err) => {
+                                        warn!(?err, "failed to update UHK display");
+                                        continue;
+                                    }
+                                };
+                                if display_text.is_empty() {
                                     continue;
                                 }
-                                last_display = Some(command);
+                                last_display = Some(display_text);
                                 current_state = Some(event.state);
                                 icon_sink(effective_icon(current_state, false));
                             }
                             BridgeServerMessage::Clear { reason } => {
                                 info!(%reason, "clear requested");
-                                clear_display(&display, &mut last_display, &reason);
+                                clear_display(&mut display, &mut last_display, &reason);
                                 current_state = None;
                                 icon_sink(effective_icon(
                                     current_state,
@@ -285,8 +296,8 @@ async fn bridge_session(
 
 /// Build the test notification through the same path real events take, so any
 /// macro-formatting regression surfaces from the tray Test action too.
-fn test_macro_command(config: &BridgeConfig) -> anyhow::Result<String> {
-    let event = AgentEventInput {
+fn test_event(config: &BridgeConfig) -> anyhow::Result<AgentEvent> {
+    Ok(AgentEventInput {
         agent: "agent-notify".to_string(),
         host: config.hostname.clone().unwrap_or_else(local_hostname),
         repo: None,
@@ -296,14 +307,12 @@ fn test_macro_command(config: &BridgeConfig) -> anyhow::Result<String> {
         ttl_seconds: Some(60),
         run_id: None,
     }
-    .into_event()?;
-    Ok(macro_command_for_event(&event)?)
+    .into_event()?)
 }
 
-fn clear_display(display: &DisplayAdapter, last_display: &mut Option<String>, reason: &str) {
-    let command = clear_macro_command();
-    if let Err(err) = display.display_macro_command(command) {
-        warn!(?err, %command, %reason, "failed to clear UHK display");
+fn clear_display(display: &mut DisplayAdapter, last_display: &mut Option<String>, reason: &str) {
+    if let Err(err) = display.clear(reason) {
+        warn!(?err, %reason, "failed to clear UHK display");
         return;
     }
 
@@ -315,7 +324,7 @@ async fn send_status(
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
     config: &BridgeConfig,
-    display: &DisplayAdapter,
+    display: &mut DisplayAdapter,
     state: &BridgeRuntimeState,
     last_display: Option<String>,
 ) -> anyhow::Result<()> {
@@ -390,14 +399,15 @@ mod tests {
     }
 
     #[test]
-    fn test_macro_command_fits_uhk_payload() {
+    fn test_event_fits_uhk_payload() {
         let config = BridgeConfig {
             server_url: "http://127.0.0.1:8787".to_string(),
             token: "change-me".to_string(),
             hostname: Some("workstation".to_string()),
             mock_display: true,
         };
-        let command = test_macro_command(&config).unwrap();
+        let event = test_event(&config).unwrap();
+        let command = agent_notify_core::macro_command_for_event(&event).unwrap();
         assert!(command.len() <= agent_notify_core::UHK_MAX_MACRO_COMMAND_BYTES);
     }
 }

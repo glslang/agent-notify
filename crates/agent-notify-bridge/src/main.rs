@@ -1,14 +1,5 @@
-#[cfg(windows)]
-mod icons;
-mod settings;
-#[cfg(windows)]
-mod tray;
-mod uhk;
-mod url;
-mod worker;
-
+use agent_notify_bridge::settings::{load_config, validate};
 use clap::Parser;
-use settings::{load_config, validate};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Debug, Parser)]
@@ -46,11 +37,11 @@ fn main() -> anyhow::Result<()> {
 
     #[cfg(windows)]
     {
-        tray::run_windows_tray(config)
+        agent_notify_bridge::tray::run_windows_tray(config)
     }
 
     #[cfg(not(windows))]
     {
-        worker::run_console(config)
+        agent_notify_bridge::worker::run_console(config)
     }
 }
