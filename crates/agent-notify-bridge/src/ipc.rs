@@ -65,6 +65,8 @@ where
 mod tests {
     use super::*;
     use agent_notify_core::{AgentEventInput, AgentState};
+    use proptest::prelude::*;
+    use serde::{Serialize, de::DeserializeOwned};
     use std::io::{BufReader, Cursor};
 
     fn sample_event() -> AgentEvent {
@@ -80,6 +82,90 @@ mod tests {
         }
         .into_event()
         .unwrap()
+    }
+
+    fn arb_string(max_chars: usize) -> impl Strategy<Value = String> {
+        prop::collection::vec(any::<char>(), 0..=max_chars)
+            .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    fn arb_nonblank_string(max_chars: usize) -> impl Strategy<Value = String> {
+        arb_string(max_chars.saturating_sub(1)).prop_map(|tail| format!("x{tail}"))
+    }
+
+    fn arb_agent_state() -> impl Strategy<Value = AgentState> {
+        prop_oneof![
+            Just(AgentState::Running),
+            Just(AgentState::WaitingInput),
+            Just(AgentState::Done),
+            Just(AgentState::Failed),
+        ]
+    }
+
+    fn arb_event() -> impl Strategy<Value = AgentEvent> {
+        (
+            arb_nonblank_string(40),
+            arb_nonblank_string(40),
+            prop::option::of(arb_string(40)),
+            arb_agent_state(),
+            prop::option::of(arb_string(80)),
+            prop::option::of(any::<u8>()),
+            prop::option::of(1_u64..=3_600),
+            prop::option::of(arb_string(40)),
+        )
+            .prop_map(
+                |(agent, host, repo, state, summary, priority, ttl_seconds, run_id)| {
+                    AgentEventInput {
+                        agent,
+                        host,
+                        repo,
+                        state,
+                        summary,
+                        priority,
+                        ttl_seconds,
+                        run_id,
+                    }
+                    .into_event()
+                    .unwrap()
+                },
+            )
+    }
+
+    fn arb_request() -> impl Strategy<Value = HidBrokerRequest> {
+        prop_oneof![
+            Just(HidBrokerRequest::ProbeKeyboard),
+            arb_event().prop_map(|event| HidBrokerRequest::SetDisplay { event }),
+            arb_string(80).prop_map(|reason| HidBrokerRequest::Clear { reason }),
+            Just(HidBrokerRequest::Shutdown),
+        ]
+    }
+
+    fn arb_response() -> impl Strategy<Value = HidBrokerResponse> {
+        prop_oneof![
+            prop::option::of(arb_string(80)).prop_map(|display| HidBrokerResponse::Ok { display }),
+            any::<bool>().prop_map(|present| HidBrokerResponse::KeyboardPresent { present }),
+            (arb_string(40), arb_string(120))
+                .prop_map(|(code, message)| HidBrokerResponse::Error { code, message }),
+        ]
+    }
+
+    fn assert_json_line_round_trip<T>(message: T) -> proptest::test_runner::TestCaseResult
+    where
+        T: DeserializeOwned + Serialize,
+    {
+        let expected = serde_json::to_value(&message).unwrap();
+        let mut encoded = Vec::new();
+        write_message(&mut encoded, &message).unwrap();
+
+        prop_assert_eq!(encoded.last(), Some(&b'\n'));
+        prop_assert_eq!(encoded.iter().filter(|byte| **byte == b'\n').count(), 1);
+        prop_assert!(encoded.len() <= MAX_IPC_MESSAGE_BYTES + 1);
+
+        let mut reader = BufReader::new(Cursor::new(encoded));
+        let decoded: T = read_message(&mut reader).unwrap().unwrap();
+        let actual = serde_json::to_value(decoded).unwrap();
+        prop_assert_eq!(actual, expected);
+        Ok(())
     }
 
     #[test]
@@ -127,5 +213,33 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(encoded));
         let decoded: HidBrokerResponse = read_message(&mut reader).unwrap().unwrap();
         assert!(matches!(decoded, HidBrokerResponse::Error { .. }));
+    }
+
+    proptest! {
+        #[test]
+        fn generated_requests_round_trip_as_json_lines(request in arb_request()) {
+            assert_json_line_round_trip(request)?;
+        }
+
+        #[test]
+        fn generated_responses_round_trip_as_json_lines(response in arb_response()) {
+            assert_json_line_round_trip(response)?;
+        }
+
+        #[test]
+        fn arbitrary_raw_frames_decode_or_fail_cleanly(mut raw in prop::collection::vec(any::<u8>(), 0..=MAX_IPC_MESSAGE_BYTES + 32)) {
+            raw.push(b'\n');
+            let mut reader = BufReader::new(Cursor::new(raw));
+            let result = read_message::<_, HidBrokerRequest>(&mut reader);
+
+            if let Err(err) = result {
+                let message = err.to_string();
+                prop_assert!(
+                    message.contains("failed to decode IPC message")
+                        || message.contains("exceeds"),
+                    "unexpected raw-frame error: {message}"
+                );
+            }
+        }
     }
 }

@@ -31,3 +31,4 @@ tower-http = { version = "0.6.11", features = ["limit", "trace"] }
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 uuid = { version = "1.19.0", features = ["serde", "v4"] }
+proptest = "1.9.0"
