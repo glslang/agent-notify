@@ -51,11 +51,11 @@ where
     if size == 0 {
         return Ok(None);
     }
-    if encoded.len() > MAX_IPC_MESSAGE_BYTES {
-        bail!("IPC message exceeds {MAX_IPC_MESSAGE_BYTES} bytes");
-    }
     if encoded.last() == Some(&b'\n') {
         encoded.pop();
+    }
+    if encoded.len() > MAX_IPC_MESSAGE_BYTES {
+        bail!("IPC message exceeds {MAX_IPC_MESSAGE_BYTES} bytes");
     }
     let message = serde_json::from_slice(&encoded).context("failed to decode IPC message")?;
     Ok(Some(message))
@@ -110,5 +110,22 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(raw));
         let err = read_message::<_, HidBrokerRequest>(&mut reader).unwrap_err();
         assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn max_size_message_with_newline_is_accepted_by_reader() {
+        let fixed_len = r#"{"type":"error","code":"x","message":""#.len() + r#""}"#.len();
+        let message = "x".repeat(MAX_IPC_MESSAGE_BYTES - fixed_len);
+        let response = HidBrokerResponse::Error {
+            code: "x".to_string(),
+            message,
+        };
+        let mut encoded = Vec::new();
+        write_message(&mut encoded, &response).unwrap();
+        assert_eq!(encoded.len(), MAX_IPC_MESSAGE_BYTES + 1);
+
+        let mut reader = BufReader::new(Cursor::new(encoded));
+        let decoded: HidBrokerResponse = read_message(&mut reader).unwrap().unwrap();
+        assert!(matches!(decoded, HidBrokerResponse::Error { .. }));
     }
 }
