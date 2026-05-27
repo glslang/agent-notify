@@ -13,6 +13,9 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# Inno Setup output
+packaging/windows/output/
+
 # Node/npm clients
 **/node_modules/
 **/dist/

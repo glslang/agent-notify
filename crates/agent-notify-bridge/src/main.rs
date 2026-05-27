@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use agent_notify_bridge::settings::{load_config, validate};
 use clap::Parser;
 use tracing_subscriber::{EnvFilter, fmt};
