@@ -370,6 +370,7 @@ fn unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn event(state: AgentState, priority: Option<u8>) -> AgentEvent {
         AgentEventInput {
@@ -384,6 +385,47 @@ mod tests {
         }
         .into_event()
         .unwrap()
+    }
+
+    fn arb_string(max_chars: usize) -> impl Strategy<Value = String> {
+        prop::collection::vec(any::<char>(), 0..=max_chars)
+            .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    fn arb_agent_state() -> impl Strategy<Value = AgentState> {
+        prop_oneof![
+            Just(AgentState::Running),
+            Just(AgentState::WaitingInput),
+            Just(AgentState::Done),
+            Just(AgentState::Failed),
+        ]
+    }
+
+    fn arb_event_input() -> impl Strategy<Value = AgentEventInput> {
+        (
+            arb_string(120),
+            arb_string(120),
+            prop::option::of(arb_string(120)),
+            arb_agent_state(),
+            prop::option::of(arb_string(240)),
+            prop::option::of(any::<u8>()),
+            prop::option::of(any::<u64>()),
+            prop::option::of(arb_string(120)),
+        )
+            .prop_map(
+                |(agent, host, repo, state, summary, priority, ttl_seconds, run_id)| {
+                    AgentEventInput {
+                        agent,
+                        host,
+                        repo,
+                        state,
+                        summary,
+                        priority,
+                        ttl_seconds,
+                        run_id,
+                    }
+                },
+            )
     }
 
     #[test]
@@ -460,5 +502,34 @@ mod tests {
         let waiting = event(AgentState::WaitingInput, None);
         let done = event(AgentState::Done, None);
         assert_eq!(choose_latest(Some(waiting), done.clone()).id, done.id);
+    }
+
+    proptest! {
+        #[test]
+        fn accepted_events_always_fit_uhk_macro_report(input in arb_event_input()) {
+            if let Ok(event) = input.into_event() {
+                let command = macro_command_for_event(&event);
+                prop_assert!(
+                    command.is_ok(),
+                    "accepted event produced an invalid macro command: {:?}",
+                    command.err()
+                );
+                let command = command.unwrap();
+                prop_assert!(command.len() <= UHK_MAX_MACRO_COMMAND_BYTES);
+
+                let report = uhk_exec_macro_report(4, &command);
+                prop_assert!(
+                    report.is_ok(),
+                    "accepted macro command produced an invalid UHK report: {:?}",
+                    report.err()
+                );
+                let report = report.unwrap();
+                prop_assert_eq!(report.len(), command.len() + 3);
+                prop_assert_eq!(report[0], 4);
+                prop_assert_eq!(report[1], UHK_EXEC_MACRO_COMMAND);
+                prop_assert_eq!(&report[2..2 + command.len()], command.as_bytes());
+                prop_assert_eq!(report.last(), Some(&0));
+            }
+        }
     }
 }
