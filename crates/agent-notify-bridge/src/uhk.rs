@@ -3,31 +3,12 @@ use agent_notify_core::uhk_exec_macro_report;
 #[cfg(windows)]
 use anyhow::Context;
 
-pub struct DisplayAdapter {
-    mock: bool,
+pub fn keyboard_present() -> bool {
+    platform::keyboard_present()
 }
 
-impl DisplayAdapter {
-    pub fn new(mock: bool) -> Self {
-        Self { mock }
-    }
-
-    pub fn keyboard_present(&self) -> bool {
-        if self.mock {
-            return true;
-        }
-
-        platform::keyboard_present()
-    }
-
-    pub fn display_macro_command(&self, command: &str) -> anyhow::Result<()> {
-        if self.mock {
-            tracing::info!(%command, "mock UHK display");
-            return Ok(());
-        }
-
-        platform::display_macro_command(command)
-    }
+pub fn display_macro_command(command: &str) -> anyhow::Result<()> {
+    platform::display_macro_command(command)
 }
 
 #[cfg(windows)]
