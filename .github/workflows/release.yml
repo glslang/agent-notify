@@ -73,7 +73,7 @@ jobs:
           "$hash  agent-notify-bridge-setup.exe" | Out-File -Encoding ascii packaging/windows/output/agent-notify-bridge-setup.exe.sha256
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Agent Notify Bridge ${{ steps.version.outputs.version }}
