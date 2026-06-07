@@ -86,7 +86,7 @@ jobs:
           echo "::notice::Skipping Codecov upload on this pull_request."
           echo "Dependabot PRs need CODECOV_TOKEN under Settings → Secrets and variables → Dependabot."
           echo "Fork PRs cannot access repository secrets; uploads run on push to main and same-repo PRs."
-      - uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -94,7 +94,7 @@ jobs:
           flags: rust
           verbose: true
           fail_ci_if_error: true
-      - uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
