@@ -27,7 +27,7 @@ tokio = { version = "1.48.0", features = ["macros", "net", "rt-multi-thread", "s
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }
 toml = "1.1.2"
 tower = { version = "0.5.2", features = ["limit"] }
-tower-http = { version = "0.6.11", features = ["limit", "trace"] }
+tower-http = { version = "0.7.0", features = ["limit", "trace"] }
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 uuid = { version = "1.23.2", features = ["serde", "v4"] }
