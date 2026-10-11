@@ -133,7 +133,7 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
           & $iscc packaging/windows/agent-notify-bridge.iss /DAppVersion=0.0.0 /DReleaseDir=$PWD/target/release
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.changes.outputs.bridge == 'true'
         with:
           name: agent-notify-bridge-setup-smoke
